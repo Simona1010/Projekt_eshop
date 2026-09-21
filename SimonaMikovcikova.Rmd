@@ -1,0 +1,278 @@
+---
+title: "Zákazníci eshopu"
+author: "Simona Mikovčíková"
+date: "`r Sys.Date()`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    theme: cerulean
+    highlight: tango
+    self-contained: true
+    code_folding: show
+---
+
+Cieľom analýzy bolo zistiť, aké faktory ovplyvňujú ročné výdavky zákazníkov navštevujúci eshop.
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+# Načítanie knižníc
+library(tidyverse)
+library(ggplot2)
+library(tidymodels)
+library(dplyr)
+```
+
+# Úvod
+
+
+```{r message=FALSE, warning=FALSE}
+#Importovanie dat
+library(readr)
+data <- read_csv("C:/Users/simon/Desktop/EUBA/R/Zadanie/Zadanie c.2/Ecommerce Customers.csv")
+head(data)
+```
+
+Dataset obsahuje 8 premenných:
+
+-   Email: E-mailová adresa zákazníka.
+
+-   Address: Adresa zákazníka.
+
+-   Avatar: Preferovaný avatar alebo farba zákazníka.
+
+-   Avg. Session Length: Priemerná dĺžka jednej návštevy (v minútach).
+
+-   Time on App: Čas strávený na mobilnej aplikácii (v minútach)
+
+-   Time on Website: Čas strávený na webovej stránke (v minútach).
+
+-   Length of Membership: Dĺžka členstva zákazníka (v rokoch).
+
+-   Yearly Amount Spent: Suma, ktorú zákazník ročne utratí (v dolároch).
+
+```{r}
+# Kontrola chýbajúcich hodnôt
+sum(is.na(data))
+```
+# Exploratorná dátová analýza (EDA)
+
+```{r}
+# Popisné štatistiky
+summary(data)
+```
+
+-   Avg. Session Length (Priemerná dĺžka jednej návštevy):
+
+    -   Rozpätie hodnôt: 29.53 - 36.14 minút
+    -   Priemer: 33.05
+
+-   Time on App (Čas strávený v aplikácii):
+
+    -   Rozpätie hodnôt: 8.508 - 15.127 minút
+    -   Priemer: 12.052 minút
+
+-   Time on Website (Čas strávený na webstránke):
+
+    -   Rozpätie hodnôt:: 33.91 - 40.01 minút.
+    -   Priemer: 37.06
+
+-   Length of Membership (Dĺžka členstva):
+
+    -   Rozpätie hodnôt:: 0.2699 - 6.9227 rokov
+    -   Priemer: 3.5335
+
+-   Yearly Amount Spent (Ročné výdavky):
+
+    -   Rozpätie hodnôt:: 256.7 - 765.5 dolárov
+    -   Priemer: 499.3 dolárov
+
+Zákazníci strávia viac času na webstránke (priemerne 37 minút) ako v aplikácii (priemerne 12 minút).\
+Priemerné ročné výdavky sú 499 dolárov. Väčšina zákazníkov má výdavky v rozmedzí 445 - 549 dolárov, čo je v rámci 1. a 3. kvartilu.
+
+```{r}
+#vyčisenie databázy
+data_clean <- data %>% 
+  select(-Email, -Address, -Avatar)
+```
+
+Odstránili sme premenné email, adresa a avatar pretože obsahujú textovú informáciu ktorá neprispieva k celkovej analýze dát. Zameriame sa na numerické premenné a to na priemernú dĺžku jednej návštevy, čas strávený v aplikácii, čas strávený na webstránke, dĺžka členstva a ročné výdavky.
+
+## Vizualizácia dát
+
+### Distribúcia numerických premenných
+
+```{r}
+# Histogramy pre všetky numerické premenné
+data_clean %>%
+  pivot_longer(everything(), names_to = "Variable", values_to = "Value") %>%
+  ggplot(aes(x = Value)) +
+  geom_histogram(bins  = 30,  fill = "blue", alpha = 0.7) +
+  facet_wrap(~ Variable, scales = "free") +
+  theme_minimal() +
+  labs(title = "Distribúcia numerických premenných")
+```
+
+Väčšina premenných má symetrické rozdelenie.
+
+### Vzťahy medzi premennými
+
+```{r}
+# Boxplot pre Time.on.App a Yearly Amount Spent
+ggplot(data_clean, aes(x = as.factor(round(`Time on App`)), y = `Yearly Amount Spent`)) +
+  geom_boxplot(fill = "skyblue", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Boxplot: Čas strávený na aplikácii vs. Ročné výdavky",
+       x = "Čas strávený na aplikácii (minuty)",
+       y = "Ročné výdavky ($)")
+```
+
+So zvyšujúcim časom stráveným na aplikácíí, medián ročných výdavkov rastie. Napríklad zákazníci, ktorí strávia 9 minút, majú medián výdavkov okolo 350 USD, zatiaľ čo zákazníci, ktorí strávia 15 minút, majú medián výdavkov približne 600 USD.
+
+Boxplot naznačuje, že zákazníci, ktorí trávia viac času na aplikácii, majú tendenciu míňať viac.
+
+```{r}
+# Boxplot pre Time on Website a Yearly Amount Spent
+ggplot(data_clean, aes(x = as.factor(round(`Time on Website`)), y = `Yearly Amount Spent`)) +
+  geom_boxplot(fill = "skyblue", alpha = 0.7) +
+  theme_minimal() +
+  labs(title = "Boxplot: Čas strávený na webstránke vs. Ročné výdavky",
+       x = "Čas strávený na webstranke (minuty)",
+       y = "Ročné výdavky ($)")
+```
+
+
+V porovnaní s časom stráveným na aplikácii  čas strávený na webstránke nemá taký silný pozitívny vplyv na ročné výdavky zákazníkov.
+Aj keď existujú drobné rozdiely (najmä pri 34 hodinách), celkový trend je menej výrazný.
+
+
+```{r}
+# Transformácia dát do "long" formátu 
+data_clean_long <- data_clean %>%
+  pivot_longer(
+    cols = c(`Length of Membership`, `Time on App`,`Avg. Session Length`, `Time on Website`),#Vyberieme stĺpce, ktoré chceme zmeniť na riadky
+    names_to = "Variable", # Názvy pôvodných stĺpcov uložíme do nového stlpca Variable
+    values_to = "Value" # Hodnoty z vybraných stĺpcov uložíme do nového stĺpca Value
+  )
+```
+
+```{r}
+# Bodový graf 
+ggplot(data_clean_long , aes(x = Value, y = `Yearly Amount Spent`, color = Variable)) +
+  geom_point(alpha = 0.6) +                
+  facet_wrap(~ Variable, scales = "free_x") +           
+  theme_minimal() +
+  theme(legend.position = "bottom")
+```
+
+
+Na bodovom grafe vidíme pozitívny lineárny vzťah medzi dĺžkou predplatného a ročnými výdavkami. 
+
+
+
+# Korelačná analýza
+
+```{r correlation, echo=TRUE}
+# Korelačná matica pre numerické premenné
+cor_matrix <- cor(data_clean)
+cor_matrix
+```
+
+Z korelačnej matice vidíme, že premenné Length of Membership (Dĺžka členstva) a Yearly Amount Spent (Ročné výdavky zákazníka) sú *silne pozitívne korelované* (0.809). To znamená, že zákazníci s dlhším členstvom majú tendenciu míňať viac peňazí ročne.
+
+Medzi premennými Time on App(Čas strávený na aplikácii) a Yearly Amount Spent (Ročné výdavky zákazníka) sú *stredne silne pozitívne korelované* (0.499). Znamená to, že čím viac času strávi zákazník na aplikácii, tým viac peňazí pravdepodobne minie.
+
+Medzi premennými Avg. Session Length(Priemerná dĺžka jednej návštevy) Yearly Amount Spent (Ročné výdavky zákazníka) sú *stredne silne pozitívne korelované* (0.355). To naznačuj, dĺžka jednej relácie je mierne pozitívne spojená s výdavkami zákazníka.
+
+Time on Website(Čas strávený na webstránke) a Yearly Amount Spent(Ročné výdavky zákazníka) má zanedbateľnú koreláciu. 
+
+
+
+
+# Regresné modelovanie
+
+## Rozdelenie dát na tréningový a testovací subor
+
+```{r split-data, echo=TRUE}
+#Rozdeľte dáta na tréninovací(80) a testovací súbor(20)
+set.seed(101)
+data_split <- initial_split(data_clean, prop = 0.8) 
+train_data <- training(data_split) #400
+test_data <- testing(data_split)#100
+```
+
+## Odhad modelu (lineárna regresia)
+
+```{r model-estimation, echo=TRUE}
+# Lineárny regresný model
+lm_model <- lm(`Yearly Amount Spent`~.,data = train_data)
+
+# Zhrnutie modelu
+summary(lm_model)
+```
+Ak všetky ostatné faktory zostanú konštantné, zvýšenie "Priemernej dĺžky relácie" (Avg. Session Length) o jednu jednotku zvýši ročné výdavky zákazníka o približne 25,6 USD.  
+
+Podobne, zvýšenie "Času stráveného v aplikácii" (Time on App) o jednu jednotku zvýši ročné výdavky zákazníka o 38,5 USD.   
+
+Zvýšenie "Času stráveného na webovej stránke" (Time on Website) o jednu jednotku zvýši ročné výdavky iba o približne 0,4 USD.   
+
+Najväčší nárast, približne 61 USD pri zvýšení "Dĺžky členstva" (Length of Membership) o jednu jednotku.
+
+Multiple R-squared:  0.9821
+Model vysvetľuje 98.21 % variability v závislej premennej.   
+
+Residual Standard Error: 10.19  
+Priemerná chyba medzi skutočnými a predikovanými hodnotami je približne 10.19 dolárov. 
+
+F-statistic: p-hodnota < 2.2e-16  
+Modelje štatisticky významný.  
+
+
+## Predikcie a hodnotenie modelu
+
+```{r prediction, echo=TRUE}
+# Predikcie na testovacích dátach
+predictions <- predict(lm_model, newdata = test_data, type = "response")
+#Metriky
+mse <- mean((test_data$`Yearly Amount Spent` - predictions)^2)
+print(paste("Mean Squared Error (MSE):", mse))
+
+rmse <- sqrt(mse)
+print(paste("Root Mean Squared Error (RMSE):", rmse))
+
+r2 <- cor(test_data$`Yearly Amount Spent`, predictions)^2
+print(paste("R-squared:", r2))
+
+mae <- mean(abs(test_data$`Yearly Amount Spent` - predictions))
+print(paste("Mean Absolute Error (MAE):", mae))
+
+
+```
+Model má priemernú odchýlku v predikciách okolo 84.  
+Model má priemernú chybu predikcie približne 9.17 dolárov.
+Model vysvetľuje približne 98.98 % variability v závislej premennej (Yearly.Amount.Spent(Ročné výdavky zákazníka)).    
+Model má priemernú chybu predikcie približne 7.48 dolárov.   
+Model má veľmi dobrú prognostickú schopnosť, čo je vidieť na vysokom R² a relatívne nízkych chybách (MSE, RMSE a MAE).
+
+
+```{r}
+# Vizualizácia skutočných vs. predikovaných hodnôt
+ggplot() +
+  geom_point(aes(x = test_data$`Yearly Amount Spent`, y = predictions), alpha = 0.6, color = "blue") +
+  stat_smooth(aes(x = test_data$`Yearly Amount Spent`, y = predictions), 
+              method = "lm", formula = y ~ x, color = "red", se = FALSE) +
+  theme_minimal() +
+  labs(
+    title = "Skutočné vs. Predikované hodnoty",
+    x = "Skutočné hodnoty",
+    y = "Predikované hodnoty"
+  )
+```
+
+Graf ukazuje, že lineárny regresný model dokáže veľmi dobre predikovať hodnoty Yearly Amount Spent, čo je v súlade s vysokou hodnotou R-squared (0.989).   
+
+
+
+
